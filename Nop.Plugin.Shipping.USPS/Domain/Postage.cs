@@ -45,6 +45,11 @@ public partial class Postage
     /// </summary>
     public decimal Rate { get; set; }
 
+    /// <summary>
+    /// Gets or sets the transit days
+    /// </summary>
+    public int TransitDays { get; set; }
+
     #region Utilities
 
     private static string PrepareServiceCode(string serviceCode)
