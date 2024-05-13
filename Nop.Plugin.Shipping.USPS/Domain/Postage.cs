@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using System.Xml.Linq;
+
 using Nop.Plugin.Shipping.USPS.Domain.Extensions;
 
 namespace Nop.Plugin.Shipping.USPS.Domain;
@@ -44,6 +45,11 @@ public partial class Postage
     /// Gets or sets a retail rate
     /// </summary>
     public decimal Rate { get; set; }
+
+    /// <summary>
+    /// Gets or sets the transit days
+    /// </summary>
+    public int TransitDays { get; set; }
 
     #region Utilities
 
