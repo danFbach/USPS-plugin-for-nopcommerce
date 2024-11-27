@@ -1,25 +1,11 @@
-﻿using Nop.Plugin.Shipping.USPS.Domain.Extensions;
-
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
+using Nop.Plugin.Shipping.USPS.Domain.Extensions;
 
 namespace Nop.Plugin.Shipping.USPS.Domain;
 
 public class TransitResponse
 {
-    public string OriginZip { get; set; }
-
-    public string DestinationZip { get; set; }
-
-    public int? Days { get; set; }
-
-    public string IsGuaranteed { get; set; }
-
-    public string Message { get; set; }
-
-    public string EffectiveAcceptanceDate { get; set; }
-
-    public string ScheduledDeliveryDate { get; set; }
-
+    #region Ctor
 
     public TransitResponse() { }
 
@@ -36,6 +22,8 @@ public class TransitResponse
         EffectiveAcceptanceDate = transit.GetValueOfXMLElement("EffectiveAcceptanceDate");
         ScheduledDeliveryDate = transit.GetValueOfXMLElement("ScheduledDeliveryDate");
     }
+
+    #endregion
 
     #region Methods
 
@@ -65,6 +53,18 @@ public class TransitResponse
             return response;
         }
     }
+
+    #endregion
+
+    #region Properties
+
+    public string OriginZip { get; set; }
+    public string DestinationZip { get; set; }
+    public int? Days { get; set; }
+    public string IsGuaranteed { get; set; }
+    public string Message { get; set; }
+    public string EffectiveAcceptanceDate { get; set; }
+    public string ScheduledDeliveryDate { get; set; }
 
     #endregion
 }

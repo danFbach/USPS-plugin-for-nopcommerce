@@ -1,5 +1,5 @@
-﻿using Microsoft.Net.Http.Headers;
-
+﻿using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.Net.Http.Headers;
 using Nop.Core;
 using Nop.Plugin.Shipping.USPS.Domain;
 
@@ -11,13 +11,6 @@ public class USPSHttpClient
 
     private const string RATES_API_KEY_INTERNATIONAL = "IntlRateV2";
     private const string RATES_API_KEY_DOMESTIC = "RateV4";
-
-    public enum TransitDaysAPI
-    {
-        PriorityMail,
-        FirstClassMail,
-        ExpressMailCommitment
-    }
 
     #endregion
 
@@ -59,14 +52,9 @@ public class USPSHttpClient
         return await RateResponse.LoadAsync(responseStream, isDomestic);
     }
 
-    public async Task<TransitResponse> GetTransitTimeAsync(TransitDaysAPI postageApiType, string originPostalCode, string destinationPostalCode, string username)
+    public async Task<TransitResponse> GetTransitTimeAsync(TransitDaysAPI api, string requestString)
     {
-        var responseStream = await _httpClient.GetStreamAsync($"?API={postageApiType}&XML=" +
-             $"<{postageApiType}Request USERID=\"{username}\">" +
-             $"<OriginZip>{originPostalCode}</OriginZip>" +
-             $"<DestinationZip>{destinationPostalCode}</DestinationZip>" +
-             $"</{postageApiType}Request>");
-
+        var responseStream = await _httpClient.GetStreamAsync($"?API={api}&XML={requestString}");
         return await TransitResponse.LoadAsync(responseStream);
     }
 

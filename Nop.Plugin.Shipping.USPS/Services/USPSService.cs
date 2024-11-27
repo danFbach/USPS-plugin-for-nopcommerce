@@ -1,5 +1,4 @@
 ﻿using System.Xml.Linq;
-
 using Nop.Core;
 using Nop.Core.Domain.Shipping;
 using Nop.Plugin.Shipping.USPS.Domain;
@@ -306,6 +305,17 @@ public class USPSService
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
+    private string CreateTransitTimeRequest(TransitDaysAPI postageApiType, string originPostalCode, string destinationPostalCode)
+    {
+        var document = new XDocument(
+            new XElement($"{postageApiType}Request", new XAttribute("USERID", _uspsSettings.Username),
+                new XElement("OriginZip", originPostalCode), 
+                new XElement("DestinationZip", destinationPostalCode))
+        );
+
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
     /// <summary>
     /// USPS country hacks
     /// The USPS wants the NAME of the country for international shipments rather than one of the ISO codes
@@ -400,7 +410,7 @@ public class USPSService
             //get rate response
             var rateResponse = await _uspsHttpClient.GetRatesAsync(requestString, isDomestic);
 
-            return await ParseResponse(rateResponse, shippingOptionRequest);
+            return await ParseResponseAsync(rateResponse, shippingOptionRequest);
         }
         catch (Exception ex)
         {
@@ -440,7 +450,7 @@ public class USPSService
         return false;
     }
 
-    private async Task<(IList<ShippingOption> shippingOptions, IList<string> errors)> ParseResponse(RateResponse response, GetShippingOptionRequest request)
+    private async Task<(IList<ShippingOption> shippingOptions, IList<string> errors)> ParseResponseAsync(RateResponse response, GetShippingOptionRequest request)
     {
         var shippingOptions = new List<ShippingOption>();
 
@@ -485,49 +495,32 @@ public class USPSService
         async Task<int?> getTransitDaysAsync(string service)
         {
             //parse out service to make request to correct API and fill Rool Element name
-            var mailType = default(USPSHttpClient.TransitDaysAPI?);
+            var mailType = default(TransitDaysAPI?);
+
             if (service.Contains("priority", StringComparison.InvariantCultureIgnoreCase))
-            {
-                mailType = USPSHttpClient.TransitDaysAPI.PriorityMail;
-            }
-            else if (service.Contains("firstclass", StringComparison.InvariantCultureIgnoreCase) ||
-                service.Contains("first class", StringComparison.InvariantCultureIgnoreCase))
-            {
-                mailType = USPSHttpClient.TransitDaysAPI.FirstClassMail;
-            }
-            else if (service.Contains("express", StringComparison.InvariantCultureIgnoreCase))
-            {
-                mailType = USPSHttpClient.TransitDaysAPI.ExpressMailCommitment;
-            }
+                mailType = TransitDaysAPI.PriorityMail;
 
-            if (mailType.HasValue)
-            {
-                var transitResponse = await _uspsHttpClient.GetTransitTimeAsync(mailType.Value,
-                    CommonHelper.EnsureMaximumLength(CommonHelper.EnsureNumericOnly(request.ZipPostalCodeFrom), 5),
-                    CommonHelper.EnsureMaximumLength(CommonHelper.EnsureNumericOnly(request.ShippingAddress.ZipPostalCode), 5), _uspsSettings.Username);
-                if (transitResponse != null &&
-                    transitResponse.Days.HasValue)
-                {
-                    var transitDays = transitResponse.Days.Value + 1; //add a day to process order.
+            if (service.Contains("firstclass", StringComparison.InvariantCultureIgnoreCase) || service.Contains("first class", StringComparison.InvariantCultureIgnoreCase))
+                mailType = TransitDaysAPI.FirstClassMail;
 
-                    var today = DateTime.UtcNow.ToLocalTime();
-                    //assuming 5-day work week here and weekend order will not be shipped until monday at earliest, may want to add options to configuration to provide most accurate estimate.
-                    while (today.DayOfWeek == DayOfWeek.Friday ||
-                        today.DayOfWeek == DayOfWeek.Saturday ||
-                        today.DayOfWeek == DayOfWeek.Sunday)
-                    {
-                        today = today.AddDays(1);
-                        transitDays += 1;
-                    }
+            if (service.Contains("express", StringComparison.InvariantCultureIgnoreCase))
+                mailType = TransitDaysAPI.ExpressMailCommitment;
 
-                    return transitDays;
-                }
-            }
+            if (mailType is null)
+                return null;
 
-            return null;
+            static string formatZip(string zipCode) => CommonHelper.EnsureMaximumLength(CommonHelper.EnsureNumericOnly(zipCode), 5);
+
+            var requestString = CreateTransitTimeRequest(
+                mailType.Value,
+                formatZip(request.ZipPostalCodeFrom),
+                formatZip(request.ShippingAddress.ZipPostalCode));
+
+            var transitResponse = await _uspsHttpClient.GetTransitTimeAsync(mailType.Value, requestString);
+
+            return transitResponse?.Days;
         }
     }
-
 
     private async Task<IList<ShipmentStatusEvent>> TrackAsync(string requestString)
     {
