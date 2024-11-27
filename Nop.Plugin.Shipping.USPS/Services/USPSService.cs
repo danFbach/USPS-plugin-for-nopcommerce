@@ -1,4 +1,5 @@
 ﻿using System.Xml.Linq;
+
 using Nop.Core;
 using Nop.Core.Domain.Shipping;
 using Nop.Plugin.Shipping.USPS.Domain;
@@ -399,7 +400,7 @@ public class USPSService
             //get rate response
             var rateResponse = await _uspsHttpClient.GetRatesAsync(requestString, isDomestic);
 
-            return ParseResponse(rateResponse);
+            return await ParseResponse(rateResponse, shippingOptionRequest);
         }
         catch (Exception ex)
         {
@@ -439,7 +440,7 @@ public class USPSService
         return false;
     }
 
-    private (IList<ShippingOption> shippingOptions, IList<string> errors) ParseResponse(RateResponse response)
+    private async Task<(IList<ShippingOption> shippingOptions, IList<string> errors)> ParseResponse(RateResponse response, GetShippingOptionRequest request)
     {
         var shippingOptions = new List<ShippingOption>();
 
@@ -452,14 +453,15 @@ public class USPSService
         if (!response.Packages?.Any() ?? true)
             return (shippingOptions, null);
 
-        shippingOptions.AddRange(response.Packages
+        shippingOptions.AddRange(await response.Packages
             .SelectMany(x => x.Postage.Where(isPostageOffered))
             .GroupBy(x => x.Id)
-            .Select(p => new ShippingOption
+            .SelectAwait(async p => new ShippingOption
             {
                 Name = p.First().MailService,
-                Rate = _uspsSettings.AdditionalHandlingCharge + p.Sum(pp => pp.Rate)
-            }));
+                Rate = _uspsSettings.AdditionalHandlingCharge + p.Sum(pp => pp.Rate),
+                TransitDays = await getTransitDaysAsync(p.First().MailService)
+            }).ToListAsync());
 
         return (shippingOptions, null);
 
@@ -479,7 +481,53 @@ public class USPSService
             // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs                                    
             return carrierServicesOffered.Contains($"[{p.Id}]");
         }
+
+        async Task<int?> getTransitDaysAsync(string service)
+        {
+            //parse out service to make request to correct API and fill Rool Element name
+            var mailType = default(USPSHttpClient.TransitDaysAPI?);
+            if (service.Contains("priority", StringComparison.InvariantCultureIgnoreCase))
+            {
+                mailType = USPSHttpClient.TransitDaysAPI.PriorityMail;
+            }
+            else if (service.Contains("firstclass", StringComparison.InvariantCultureIgnoreCase) ||
+                service.Contains("first class", StringComparison.InvariantCultureIgnoreCase))
+            {
+                mailType = USPSHttpClient.TransitDaysAPI.FirstClassMail;
+            }
+            else if (service.Contains("express", StringComparison.InvariantCultureIgnoreCase))
+            {
+                mailType = USPSHttpClient.TransitDaysAPI.ExpressMailCommitment;
+            }
+
+            if (mailType.HasValue)
+            {
+                var transitResponse = await _uspsHttpClient.GetTransitTimeAsync(mailType.Value,
+                    CommonHelper.EnsureMaximumLength(CommonHelper.EnsureNumericOnly(request.ZipPostalCodeFrom), 5),
+                    CommonHelper.EnsureMaximumLength(CommonHelper.EnsureNumericOnly(request.ShippingAddress.ZipPostalCode), 5), _uspsSettings.Username);
+                if (transitResponse != null &&
+                    transitResponse.Days.HasValue)
+                {
+                    var transitDays = transitResponse.Days.Value + 1; //add a day to process order.
+
+                    var today = DateTime.UtcNow.ToLocalTime();
+                    //assuming 5-day work week here and weekend order will not be shipped until monday at earliest, may want to add options to configuration to provide most accurate estimate.
+                    while (today.DayOfWeek == DayOfWeek.Friday ||
+                        today.DayOfWeek == DayOfWeek.Saturday ||
+                        today.DayOfWeek == DayOfWeek.Sunday)
+                    {
+                        today = today.AddDays(1);
+                        transitDays += 1;
+                    }
+
+                    return transitDays;
+                }
+            }
+
+            return null;
+        }
     }
+
 
     private async Task<IList<ShipmentStatusEvent>> TrackAsync(string requestString)
     {
