@@ -6,14 +6,6 @@ namespace Nop.Plugin.Shipping.USPS.Models;
 
 public record USPSShippingModel : BaseNopModel
 {
-    public USPSShippingModel()
-    {
-        CarrierServicesOfferedDomestic = new List<string>();
-        AvailableCarrierServicesDomestic = new List<string>();
-        CarrierServicesOfferedInternational = new List<string>();
-        AvailableCarrierServicesInternational = new List<string>();
-    }
-
     [NopResourceDisplayName("Plugins.Shipping.USPS.Fields.Url")]
     public string Url { get; set; }
 
@@ -28,17 +20,17 @@ public record USPSShippingModel : BaseNopModel
     [NopResourceDisplayName("Plugins.Shipping.USPS.Fields.AdditionalHandlingCharge")]
     public decimal AdditionalHandlingCharge { get; set; }
 
-    public IList<string> CarrierServicesOfferedDomestic { get; set; }
+    public List<string> CarrierServicesOfferedDomestic { get; set; } = new();
 
     [NopResourceDisplayName("Plugins.Shipping.USPS.Fields.AvailableCarrierServicesDomestic")]
-    public IList<string> AvailableCarrierServicesDomestic { get; set; }
+    public List<string> AvailableCarrierServicesDomestic { get; set; } = new();
 
     public string[] CheckedCarrierServicesDomestic { get; set; }
 
-    public IList<string> CarrierServicesOfferedInternational { get; set; }
+    public List<string> CarrierServicesOfferedInternational { get; set; } = new();
 
     [NopResourceDisplayName("Plugins.Shipping.USPS.Fields.AvailableCarrierServicesInternational")]
-    public IList<string> AvailableCarrierServicesInternational { get; set; }
+    public List<string> AvailableCarrierServicesInternational { get; set; } = new();
 
     public string[] CheckedCarrierServicesInternational { get; set; }
 }

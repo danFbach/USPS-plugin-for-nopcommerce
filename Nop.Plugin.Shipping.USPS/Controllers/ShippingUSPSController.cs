@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Collections.Generic;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Plugin.Shipping.USPS.Domain;
 using Nop.Plugin.Shipping.USPS.Models;
@@ -21,9 +22,46 @@ public class ShippingUSPSController : BasePluginController
 
     private readonly ILocalizationService _localizationService;
     private readonly INotificationService _notificationService;
-    private readonly IPermissionService _permissionService;
     private readonly ISettingService _settingService;
     private readonly USPSSettings _uspsSettings;
+
+    public static readonly IReadOnlyDictionary<string, string> _domesticServices = new Dictionary<string, string>()
+    {
+        ["NONE (disable all domestic services)"] = "NONE",
+        ["Ground Advantage"] = "1058",
+        ["First-Class Mail Letter"] = "letter",
+        ["Priority Mail Express Sunday/Holiday Guarantee"] = "23",
+        ["Priority Mail Express Flat-Rate Envelope Sunday/Holiday Guarantee"] = "25",
+        ["Priority Mail Express Hold For Pickup"] = "2",
+        ["Priority Mail Express Flat Rate Envelope Hold For Pickup"] = "27",
+        ["Priority Mail Express"] = "3",
+        ["Priority Mail Express Flat Rate Envelope"] = "13",
+        ["Priority Mail"] = "1",
+        ["Priority Mail Flat Rate Envelope"] = "16",
+        ["Priority Mail Small Flat Rate Box"] = "28",
+        ["Priority Mail Medium Flat Rate Box"] = "17",
+        ["Priority Mail Large Flat Rate Box"] = "22",
+        ["Standard Post"] = "4",
+        ["Bound Printed Matter"] = "5",
+        ["Media Mail Parcel"] = "6",
+        ["Library Mail Parcel"] = "7"
+    };
+
+    public static readonly IReadOnlyDictionary<string, string> _internationalServices = new Dictionary<string, string>()
+    {
+        ["NONE (disable all international services)"] = "NONE",
+        ["Global Express Guaranteed (GXG)"] = "4",
+        ["USPS GXG Envelopes"] = "12",
+        ["Priority Mail Express International Flat Rate Envelope"] = "10",
+        ["Priority Mail International"] = "2",
+        ["Priority Mail International Large Flat Rate Box"] = "11",
+        ["Priority Mail International Medium Flat Rate Box"] = "9",
+        ["Priority Mail International Small Flat Rate Box"] = "16",
+        ["First-Class Mail International Large Envelope"] = "14",
+        ["Priority Mail Express International"] = "1",
+        ["Priority Mail International Flat Rate Envelope"] = "8",
+        ["First-Class Package International Service"] = "15"
+    };
 
     #endregion
 
@@ -31,13 +69,11 @@ public class ShippingUSPSController : BasePluginController
 
     public ShippingUSPSController(ILocalizationService localizationService,
         INotificationService notificationService,
-        IPermissionService permissionService,
         ISettingService settingService,
         USPSSettings uspsSettings)
     {
         _localizationService = localizationService;
         _notificationService = notificationService;
-        _permissionService = permissionService;
         _settingService = settingService;
         _uspsSettings = uspsSettings;
     }
@@ -46,11 +82,9 @@ public class ShippingUSPSController : BasePluginController
 
     #region Methods
 
+    [CheckPermission(StandardPermission.Orders.SHIPMENTS_VIEW)]
     public async Task<IActionResult> Configure()
     {
-        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageShippingSettings))
-            return AccessDeniedView();
-
         var model = new USPSShippingModel
         {
             Url = _uspsSettings.Url,
@@ -62,48 +96,40 @@ public class ShippingUSPSController : BasePluginController
         // Load Domestic service names
         var carrierServicesOfferedDomestic = _uspsSettings.CarrierServicesOfferedDomestic;
 
-        foreach (var service in USPSServices.DomesticServices)
-            model.AvailableCarrierServicesDomestic.Add(service);
+        model.AvailableCarrierServicesDomestic.AddRange(_domesticServices.Keys);
 
         if (!string.IsNullOrEmpty(carrierServicesOfferedDomestic))
         {
-            foreach (var service in USPSServices.DomesticServices)
+            foreach (var (service, serviceId) in _domesticServices)
             {
-                var serviceId = USPSServices.GetServiceIdDomestic(service);
-                if (!string.IsNullOrEmpty(serviceId))
-                {
-                    // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs
-                    if (carrierServicesOfferedDomestic.Contains($"[{serviceId}]"))
-                        model.CarrierServicesOfferedDomestic.Add(service);
-                }
+                // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs
+                if (carrierServicesOfferedDomestic.Contains($"[{serviceId}]"))
+                    model.CarrierServicesOfferedDomestic.Add(service);
             }
         }
 
         // Load Internation service names
         var carrierServicesOfferedInternational = _uspsSettings.CarrierServicesOfferedInternational;
-        foreach (var service in USPSServices.InternationalServices)
-            model.AvailableCarrierServicesInternational.Add(service);
+
+        model.AvailableCarrierServicesInternational.AddRange(_internationalServices.Keys);
 
         if (!string.IsNullOrEmpty(carrierServicesOfferedInternational))
-            foreach (var service in USPSServices.InternationalServices)
+        {
+            foreach (var (service, serviceId) in _internationalServices)
             {
-                var serviceId = USPSServices.GetServiceIdInternational(service);
-                if (!string.IsNullOrEmpty(serviceId))
-                {
-                    // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs
-                    if (carrierServicesOfferedInternational.Contains($"[{serviceId}]"))
-                        model.CarrierServicesOfferedInternational.Add(service);
-                }
+                // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs
+                if (carrierServicesOfferedInternational.Contains($"[{serviceId}]"))
+                    model.CarrierServicesOfferedInternational.Add(service);
             }
+        }
+
         return View("~/Plugins/Shipping.USPS/Views/Configure.cshtml", model);
     }
 
     [HttpPost]
+    [CheckPermission(StandardPermission.Orders.SHIPMENTS_CREATE_EDIT_DELETE)]
     public async Task<IActionResult> Configure(USPSShippingModel model)
     {
-        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageShippingSettings))
-            return AccessDeniedView();
-
         if (!ModelState.IsValid)
             return await Configure();
 
@@ -122,12 +148,10 @@ public class ShippingUSPSController : BasePluginController
             {
                 carrierServicesDomesticSelectedCount++;
 
-                var serviceId = USPSServices.GetServiceIdDomestic(cs);
                 //unselect any other services if NONE is selected
-                if (!string.IsNullOrEmpty(serviceId) && serviceId.Equals("NONE"))
+                if (_domesticServices.TryGetValue(cs ?? string.Empty, out var serviceId) && !string.IsNullOrEmpty(serviceId) && serviceId.Equals("NONE"))
                 {
-                    carrierServicesOfferedDomestic.Clear();
-                    carrierServicesOfferedDomestic.AppendFormat("[{0}]:", serviceId);
+                    carrierServicesOfferedDomestic.Clear().AppendFormat("[{0}]:", serviceId);
                     break;
                 }
 
@@ -152,14 +176,14 @@ public class ShippingUSPSController : BasePluginController
             foreach (var cs in model.CheckedCarrierServicesInternational)
             {
                 carrierServicesInternationalSelectedCount++;
-                var serviceId = USPSServices.GetServiceIdInternational(cs);
+
                 // unselect other services if NONE is selected
-                if (!string.IsNullOrEmpty(serviceId) && serviceId.Equals("NONE"))
+                if (_internationalServices.TryGetValue(cs ?? string.Empty, out var serviceId) && !string.IsNullOrEmpty(serviceId) && serviceId.Equals("NONE"))
                 {
-                    carrierServicesOfferedInternational.Clear();
-                    carrierServicesOfferedInternational.AppendFormat("[{0}]:", serviceId);
+                    carrierServicesOfferedInternational.Clear().AppendFormat("[{0}]:", serviceId);
                     break;
                 }
+
                 if (!string.IsNullOrEmpty(serviceId))
                 {
                     // Add delimiters [] so that single digit IDs aren't found in multi-digit IDs
